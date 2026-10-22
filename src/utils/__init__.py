@@ -1,5 +1,6 @@
-"""Utility functions, configuration, and visualization tools."""
+"""Utility functions, configuration, device detection, and visualization tools."""
 from src.utils.config import ExperimentConfig
+from src.utils.device import get_device_info, print_device_banner, resolve_device
 from src.utils.visualizer import (
     generate_all_visualizations,
     plot_accuracy_matrix_heatmap,
@@ -9,8 +10,12 @@ from src.utils.visualizer import (
 
 __all__ = [
     "ExperimentConfig",
+    "get_device_info",
+    "print_device_banner",
+    "resolve_device",
     "generate_all_visualizations",
     "plot_accuracy_matrix_heatmap",
     "plot_continual_vs_baseline_barchart",
     "plot_forgetting_decay_curves",
 ]
+

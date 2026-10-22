@@ -16,6 +16,7 @@ from src.data.cifar100_split import CIFAR100ContinualDataModule
 from src.evaluation.metrics import ContinualMetricsTracker, evaluate_accuracy
 from src.models.vgg16_adapted import VGG16Adapted
 from src.utils.config import ExperimentConfig
+from src.utils.device import print_device_banner, resolve_device
 from src.utils.visualizer import generate_all_visualizations
 
 
@@ -98,10 +99,8 @@ class ContinualLearningPipeline:
 
     def __init__(self, config: ExperimentConfig):
         self.config = config
-        self.device = torch.device(
-            config.device if config.device else ("cuda" if torch.cuda.is_available() else "cpu")
-        )
-        print(f"[Device] Using device: {self.device}")
+        self.device, self.device_info = resolve_device(config.device)
+        print(f"[Pipeline] Active compute device: {self.device}")
 
         # Setup Data Module
         print("\n[Data] Initializing CIFAR-100 Continual Data Module...")

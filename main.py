@@ -11,6 +11,7 @@ import torch
 
 from src.training.trainer import ContinualLearningPipeline
 from src.utils.config import ExperimentConfig
+from src.utils.device import print_device_banner, resolve_device
 
 
 def set_seed(seed: int = 42) -> None:
@@ -70,7 +71,11 @@ def parse_args() -> argparse.Namespace:
         "--baseline-epochs", type=int, default=15, help="Epochs for isolated baseline models (default: 15)"
     )
     parser.add_argument(
-        "--device", type=str, default=None, choices=["cuda", "cpu", None], help="Force device (cuda or cpu, default: auto-detect)"
+        "--device",
+        type=str,
+        default="auto",
+        choices=["auto", "cuda", "cpu", "mps"],
+        help="Hardware compute device to run on ('auto', 'cuda', 'cpu', 'mps', default: auto-detect)",
     )
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for reproducibility (default: 42)"
@@ -84,6 +89,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     print_banner()
     args = parse_args()
+
+    # Detect and resolve hardware compute device (CUDA GPU -> Apple Silicon MPS -> CPU)
+    device, device_info = resolve_device(args.device)
+    print_device_banner(device_info)
 
     # Set seed
     set_seed(args.seed)
@@ -107,11 +116,12 @@ def main() -> None:
         weight_decay=args.weight_decay,
         run_isolated_baselines=not args.no_baselines,
         baseline_epochs=baseline_epochs,
-        device=args.device,
+        device=str(device),
         seed=args.seed,
     )
 
     print(f"[Configuration]")
+    print(f"  - Active Hardware Device : {device_info['device_type'].upper()} ({device})")
     print(f"  - Continual Phases       : {config.num_phases} (25 classes each -> 100 total)")
     print(f"  - Epochs Per Phase       : {config.epochs_per_phase}")
     print(f"  - Batch Size             : {config.batch_size}")

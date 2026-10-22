@@ -141,6 +141,27 @@ python main.py --quick-test
 
 ---
 
+## 🖥️ GPU Acceleration & Hardware Auto-Detection
+
+The pipeline includes **automatic hardware detection**:
+- **Automatic GPU Detection**: By default (`--device auto`), the pipeline automatically checks for an available **NVIDIA CUDA GPU** or **Apple Silicon MPS (Metal)**. If found, it automatically executes on the GPU.
+- **Hardware Diagnostics Banner**: Right at startup, a hardware report is printed detailing:
+  - Active device (`GPU` or `CPU`)
+  - GPU model name (e.g., `NVIDIA GeForce RTX 4090`)
+  - Total VRAM and free/available VRAM (in GB and MB)
+  - CUDA runtime version and compute capability
+- **Graceful Fallback**: If no GPU is available, it gracefully defaults to CPU and displays CPU architecture and worker thread counts.
+- **Manual Device Override**: You can force a specific device at any time using `--device cuda`, `--device cpu`, or `--device mps`.
+
+> [!TIP]
+> **Enabling NVIDIA CUDA Acceleration with `uv`:**
+> If your system has an NVIDIA GPU and you want to ensure PyTorch uses CUDA rather than the CPU wheel:
+> ```powershell
+> uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+> ```
+
+---
+
 ## ⚡ Experiment Execution Options
 
 ### 1. Fast Sanity Check (Recommended First Run)
@@ -161,10 +182,21 @@ If you only want to measure catastrophic forgetting across sequential phases and
 uv run python main.py --epochs 15 --no-baselines
 ```
 
-### 4. CLI Arguments Reference
+### 4. Running with an Explicit Device
+Force CPU or GPU execution:
+```powershell
+# Run on GPU
+uv run python main.py --quick-test --device cuda
+
+# Force run on CPU
+uv run python main.py --quick-test --device cpu
+```
+
+### 5. CLI Arguments Reference
 
 | Argument | Type | Default | Description |
 |---|---|---|---|
+| `--device` | `str` | `'auto'` | Hardware device (`'auto'`, `'cuda'`, `'cpu'`, `'mps'`). Auto-detects GPU by default |
 | `--epochs` | `int` | `15` | Training epochs per continual phase |
 | `--batch-size` | `int` | `64` | Mini-batch size |
 | `--lr` | `float` | `0.001` | Initial Adam learning rate |
