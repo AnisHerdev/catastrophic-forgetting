@@ -12,6 +12,7 @@ import torch
 from src.training.trainer import ContinualLearningPipeline
 from src.utils.config import ExperimentConfig
 from src.utils.device import print_device_banner, resolve_device
+from src.utils.logger import setup_experiment_logger
 
 
 def set_seed(seed: int = 42) -> None:
@@ -87,8 +88,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    print_banner()
     args = parse_args()
+
+    # Initialize live dual logger (terminal + timestamped log file in output_dir)
+    log_file_path = setup_experiment_logger(output_dir=args.output_dir)
+
+    print_banner()
+    print(f"[Logging] Recording live console output to: {log_file_path}\n")
 
     # Detect and resolve hardware compute device (CUDA GPU -> Apple Silicon MPS -> CPU)
     device, device_info = resolve_device(args.device)
@@ -129,12 +135,14 @@ def main() -> None:
     print(f"  - Run Isolated Baselines : {config.run_isolated_baselines} ({config.baseline_epochs} epochs each)")
     print(f"  - Output Directory       : {config.output_dir}")
     print(f"  - Checkpoints Directory  : {config.checkpoints_dir}")
+    print(f"  - Run Log File           : {log_file_path}")
 
     # Launch Pipeline
     pipeline = ContinualLearningPipeline(config)
     pipeline.run_full_experiment()
 
-    print("\n[Complete] Experiment finished successfully!")
+    print(f"\n[Logging] Full experiment execution log successfully saved to: {log_file_path}")
+    print("[Complete] Experiment finished successfully!")
 
 
 if __name__ == "__main__":

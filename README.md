@@ -218,3 +218,4 @@ All outputs are saved to `./results/`:
 2. **`accuracy_matrix_heatmap.png`**: Heatmap showing retention across phases and forgetting severity.
 3. **`accuracy_decay_curves.png`**: Line plot tracking the performance decline of Phase 1, 2, and 3 as subsequent phases are learned.
 4. **`continual_vs_baseline.png`**: Bar chart comparing Initial Accuracy vs Retained Accuracy vs Isolated Baseline for each phase.
+5. **`experiment_run_YYYY-MM-DD_HH-MM-SS.log`**: Complete byte-for-byte console execution log recorded in UTF-8 with exact run timestamp.
