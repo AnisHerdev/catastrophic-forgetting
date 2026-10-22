@@ -157,7 +157,7 @@ The pipeline includes **automatic hardware detection**:
 > **Enabling NVIDIA CUDA Acceleration with `uv`:**
 > If your system has an NVIDIA GPU and you want to ensure PyTorch uses CUDA rather than the CPU wheel:
 > ```powershell
-> uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+> uv pip install --reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu124
 > ```
 
 ---

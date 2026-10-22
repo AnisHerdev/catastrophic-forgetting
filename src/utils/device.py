@@ -127,7 +127,7 @@ def resolve_device(requested_device: Optional[str] = None) -> Tuple[torch.device
                     " 1. No NVIDIA GPU is installed in this machine.\n"
                     " 2. NVIDIA drivers are missing or not updated.\n"
                     " 3. PyTorch was installed with CPU-only binaries.\n"
-                    "To install the CUDA build: uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124\n"
+                    "To install the CUDA build: uv pip install --reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu124\n"
                     "To run on CPU instead, use '--device cpu' or omit the flag for auto-detection."
                 )
             device = torch.device(requested_device)
@@ -192,7 +192,7 @@ def print_device_banner(device_info: Dict[str, Any]) -> None:
             print(f"  currently running the CPU build of PyTorch without CUDA acceleration.")
             print(f"")
             print(f"  To unlock 15x-50x faster GPU training on this PC, copy and run:")
-            print(f"    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124")
+            print(f"    uv pip install --reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu124")
             print(f"")
             print(f"  Continuing execution on CPU for now so your run does not halt...")
             print(f"  ----------------------------------------------------------------------------")
