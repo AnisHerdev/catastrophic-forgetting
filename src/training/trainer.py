@@ -17,6 +17,7 @@ from src.evaluation.metrics import ContinualMetricsTracker, evaluate_accuracy
 from src.models.vgg16_adapted import VGG16Adapted
 from src.utils.config import ExperimentConfig
 from src.utils.device import print_device_banner, resolve_device
+from src.utils.seed import set_seed
 from src.utils.visualizer import generate_all_visualizations
 
 
@@ -128,8 +129,11 @@ class ContinualLearningPipeline:
         print("=" * 80)
 
         for phase in range(1, self.config.num_phases + 1):
+            # Phase 1 baseline uses the base experiment seed; subsequent phases use a deterministic offset
+            phase_seed = self.config.seed if phase == 1 else (self.config.seed + phase)
+            set_seed(phase_seed)
+
             print(f"\n---> Training Isolated Baseline Model for Phase {phase} ({self.config.classes_per_phase} classes)...")
-            train_loader, test_loader = self.data_module.get_phase_dataloaders(phase, mode="isolated")
 
             # Initialize fresh VGG16 model with 25 classes
             baseline_model = VGG16Adapted(
@@ -137,6 +141,10 @@ class ContinualLearningPipeline:
                 pretrained=self.config.pretrained_backbone,
                 dropout_rate=self.config.dropout_rate,
             ).to(self.device)
+
+            train_loader, test_loader = self.data_module.get_phase_dataloaders(
+                phase, mode="isolated", seed=phase_seed
+            )
 
             train_model(
                 model=baseline_model,
@@ -165,18 +173,16 @@ class ContinualLearningPipeline:
         print("STARTING CLASS-INCREMENTAL CONTINUAL LEARNING PIPELINE")
         print("=" * 80)
 
+        # Reset RNG state to self.config.seed so Continual Phase 1 begins with
+        # the EXACT same initial weights, data shuffling, and dropout as Baseline Phase 1.
+        set_seed(self.config.seed)
+
         # Initialize Continual Model with initial 25 classes
         continual_model = VGG16Adapted(
             num_classes=self.config.classes_per_phase,
             pretrained=self.config.pretrained_backbone,
             dropout_rate=self.config.dropout_rate,
         ).to(self.device)
-
-        # Store test loaders for evaluation
-        phase_test_loaders = {}
-        for p in range(1, self.config.num_phases + 1):
-            _, t_loader = self.data_module.get_phase_dataloaders(p, mode="continual")
-            phase_test_loaders[p] = t_loader
 
         # Iterate through continual phases
         for current_phase in range(1, self.config.num_phases + 1):
@@ -192,7 +198,12 @@ class ContinualLearningPipeline:
                 continual_model.expand_classes(expected_num_classes)
 
             # Get current phase training data
-            train_loader, _ = self.data_module.get_phase_dataloaders(current_phase, mode="continual")
+            # For Phase 1, pass self.config.seed so its DataLoader generator produces
+            # the exact same mini-batch permutation order as Baseline Phase 1
+            phase_loader_seed = self.config.seed if current_phase == 1 else None
+            train_loader, _ = self.data_module.get_phase_dataloaders(
+                current_phase, mode="continual", seed=phase_loader_seed
+            )
 
             # Train on current phase
             train_model(
@@ -213,7 +224,7 @@ class ContinualLearningPipeline:
             # Comprehensive Evaluation: Evaluate on all seen phase test sets (1 to current_phase)
             print(f"\n[Evaluation after Phase {current_phase}] Evaluating model on all seen test sets:")
             for eval_p in range(1, current_phase + 1):
-                t_loader = phase_test_loaders[eval_p]
+                t_loader = self.data_module.get_phase_test_loader(eval_p)
                 eval_acc, eval_loss = evaluate_accuracy(continual_model, t_loader, self.device)
                 self.tracker.record_accuracy(trained_phase=current_phase, evaluated_phase=eval_p, accuracy=eval_acc)
                 

@@ -13,18 +13,7 @@ from src.training.trainer import ContinualLearningPipeline
 from src.utils.config import ExperimentConfig
 from src.utils.device import print_device_banner, resolve_device
 from src.utils.logger import setup_experiment_logger
-
-
-def set_seed(seed: int = 42) -> None:
-    """Sets random seeds for reproducibility."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+from src.utils.seed import set_seed
 
 
 def print_banner() -> None:

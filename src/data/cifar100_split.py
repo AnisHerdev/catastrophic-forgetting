@@ -9,6 +9,8 @@ from torch.utils.data import DataLoader, Dataset
 import torchvision
 import torchvision.transforms as transforms
 
+from src.utils.seed import seed_worker
+
 
 # CIFAR-100 Superclasses to Fine-Classes mapping (Standard CIFAR-100 definition)
 SUPERCLASS_TO_FINE_CLASSES: Dict[int, List[int]] = {
@@ -165,7 +167,7 @@ class CIFAR100ContinualDataModule:
         return [i for i, label in enumerate(raw_dataset.targets) if label in target_set]
 
     def get_phase_dataloaders(
-        self, phase: int, mode: str = "continual"
+        self, phase: int, mode: str = "continual", seed: Optional[int] = None
     ) -> Tuple[DataLoader, DataLoader]:
         """
         Returns (train_loader, test_loader) for a specific phase.
@@ -174,6 +176,7 @@ class CIFAR100ContinualDataModule:
             phase: Phase index (1 to num_phases).
             mode: "continual" uses globally contiguous labels (0..24 for phase 1, 25..49 for phase 2, etc.),
                   "isolated" uses local labels (0..24) for single-phase baseline training.
+            seed: Optional integer to deterministically seed the training batch generator.
         """
         if phase not in self.phase_fine_classes:
             raise ValueError(f"Invalid phase {phase}. Must be between 1 and {self.num_phases}.")
@@ -187,12 +190,19 @@ class CIFAR100ContinualDataModule:
         train_subset = PhaseSubsetDataset(self.raw_train_dataset, train_indices, mapping)
         test_subset = PhaseSubsetDataset(self.raw_test_dataset, test_indices, mapping)
 
+        generator = None
+        if seed is not None:
+            generator = torch.Generator()
+            generator.manual_seed(seed)
+
         train_loader = DataLoader(
             train_subset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=torch.cuda.is_available(),
+            worker_init_fn=seed_worker if self.num_workers > 0 else None,
+            generator=generator,
         )
         test_loader = DataLoader(
             test_subset,
@@ -202,6 +212,26 @@ class CIFAR100ContinualDataModule:
             pin_memory=torch.cuda.is_available(),
         )
         return train_loader, test_loader
+
+    def get_phase_test_loader(self, phase: int) -> DataLoader:
+        """
+        Returns only the test DataLoader for a specific phase using global continual labels.
+        Avoids creating training subsets during multi-phase continual evaluation.
+        """
+        if phase not in self.phase_fine_classes:
+            raise ValueError(f"Invalid phase {phase}. Must be between 1 and {self.num_phases}.")
+
+        classes = self.phase_fine_classes[phase]
+        test_indices = self._get_subset_indices(self.raw_test_dataset, classes)
+        test_subset = PhaseSubsetDataset(self.raw_test_dataset, test_indices, self.global_class_mapping)
+
+        return DataLoader(
+            test_subset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
+            pin_memory=torch.cuda.is_available(),
+        )
 
     def get_cumulative_test_loader(self, up_to_phase: int) -> DataLoader:
         """Returns a test loader containing all classes seen from Phase 1 up to `up_to_phase`."""

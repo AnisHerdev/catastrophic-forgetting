@@ -6,3 +6,5 @@ local/
 
 *.log
 results/*.log
+
+u*.md
