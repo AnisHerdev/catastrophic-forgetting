@@ -1,13 +1,42 @@
 """
 Hardware and Acceleration Device Detection & Diagnostics.
 Supports automatic resolution of CUDA (NVIDIA), MPS (Apple Silicon), and CPU devices,
-with detailed hardware reporting (model name, available/total VRAM, driver version).
+with physical GPU hardware inspection and actionable acceleration recommendations.
 """
 
 import os
 import platform
-from typing import Any, Dict, Optional, Tuple
+import subprocess
+from typing import Any, Dict, List, Optional, Tuple
 import torch
+
+
+def detect_physical_gpus() -> List[str]:
+    """
+    Queries the host operating system directly for physical graphics adapters.
+    Works independently of PyTorch or CUDA installation.
+    """
+    names: List[str] = []
+    sys_name = platform.system()
+    try:
+        if sys_name == "Windows":
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_VideoController).Name"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if res.returncode == 0:
+                names = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+        elif sys_name == "Linux":
+            res = subprocess.run(["lspci"], capture_output=True, text=True, timeout=2)
+            if res.returncode == 0:
+                for line in res.stdout.splitlines():
+                    if any(kw in line.upper() for kw in ("VGA", "3D", "DISPLAY", "NVIDIA")):
+                        names.append(line.strip())
+    except Exception:
+        pass
+    return names
 
 
 def get_device_info(device: torch.device) -> Dict[str, Any]:
@@ -59,6 +88,17 @@ def get_device_info(device: torch.device) -> Dict[str, Any]:
             hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
         )
 
+        # Inspect physical system hardware for an unutilized NVIDIA GPU
+        physical_gpus = detect_physical_gpus()
+        info["physical_gpus"] = physical_gpus
+        nvidia_keywords = ("NVIDIA", "GEFORCE", "RTX", "GTX", "QUADRO", "TESLA", "TITAN")
+        nvidia_gpus = [
+            g for g in physical_gpus
+            if any(kw in g.upper() for kw in nvidia_keywords)
+        ]
+        info["nvidia_physical_gpus"] = nvidia_gpus
+        info["has_unutilized_nvidia_gpu"] = len(nvidia_gpus) > 0 and not torch.cuda.is_available()
+
     return info
 
 
@@ -87,6 +127,7 @@ def resolve_device(requested_device: Optional[str] = None) -> Tuple[torch.device
                     " 1. No NVIDIA GPU is installed in this machine.\n"
                     " 2. NVIDIA drivers are missing or not updated.\n"
                     " 3. PyTorch was installed with CPU-only binaries.\n"
+                    "To install the CUDA build: uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124\n"
                     "To run on CPU instead, use '--device cpu' or omit the flag for auto-detection."
                 )
             device = torch.device(requested_device)
@@ -138,14 +179,30 @@ def print_device_banner(device_info: Dict[str, Any]) -> None:
         print(f"  Status               : GPU acceleration active via Apple Metal.")
 
     else:
-        print(f"  Active Device        : CPU")
-        arch = device_info.get("cpu_arch") or platform.machine()
-        threads = device_info.get("cpu_threads", "N/A")
-        print(f"  CPU Architecture     : {arch} ({platform.system()} {platform.release()})")
-        print(f"  CPU Worker Threads   : {threads}")
-        print(f"  GPU Detected         : No CUDA or MPS GPU available to PyTorch.")
-        print(f"  Note                 : Automatically utilizing CPU. If this machine has an")
-        print(f"                         NVIDIA GPU, ensure NVIDIA drivers and a CUDA-enabled")
-        print(f"                         build of PyTorch are installed.")
+        # Check if an unutilized physical NVIDIA GPU was detected on this machine
+        if device_info.get("has_unutilized_nvidia_gpu"):
+            nvidia_card = device_info["nvidia_physical_gpus"][0]
+            print(f"  Active Device        : CPU (Current PyTorch build: {torch.__version__})")
+            print(f"  Physical GPU Found   : {nvidia_card}")
+            print(f"")
+            print(f"  ----------------------------------------------------------------------------")
+            print(f"  * NOTICE: PHYSICAL NVIDIA GPU DETECTED, BUT PYTORCH IS CPU-ONLY")
+            print(f"  ----------------------------------------------------------------------------")
+            print(f"  A dedicated NVIDIA GPU was found on this system, but your environment is")
+            print(f"  currently running the CPU build of PyTorch without CUDA acceleration.")
+            print(f"")
+            print(f"  To unlock 15x-50x faster GPU training on this PC, copy and run:")
+            print(f"    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124")
+            print(f"")
+            print(f"  Continuing execution on CPU for now so your run does not halt...")
+            print(f"  ----------------------------------------------------------------------------")
+        else:
+            print(f"  Active Device        : CPU")
+            arch = device_info.get("cpu_arch") or platform.machine()
+            threads = device_info.get("cpu_threads", "N/A")
+            print(f"  CPU Architecture     : {arch} ({platform.system()} {platform.release()})")
+            print(f"  CPU Worker Threads   : {threads}")
+            print(f"  GPU Detected         : No CUDA or MPS GPU available to PyTorch.")
+            print(f"  Status               : Running on CPU.")
 
     print(border + "\n")
