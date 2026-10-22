@@ -61,36 +61,107 @@ catastrophic-forgetting/
 
 ---
 
-## ⚡ Usage & Execution
+## 🚀 Quickstart & Setup Guide (Using `uv`)
 
-### 1. Environment Setup with `uv`
+This project uses [**`uv`**](https://docs.astral.sh/uv/), an extremely fast, modern Python package and project manager. 
 
-```powershell
-# Activate the virtual environment
-.venv\Scripts\activate
+With `uv`, you don't need to manually configure virtual environments or install dependencies one by one. A single command (`uv sync`) automatically creates the virtual environment and installs everything required based on [`pyproject.toml`](pyproject.toml).
 
-# Install dependencies (already completed)
-uv add numpy pandas matplotlib seaborn tqdm scikit-learn
+---
+
+### Step 1: Install `uv` (One-time setup)
+
+If you don't have `uv` installed yet on your computer, install it via the terminal:
+
+- **Windows (PowerShell)**:
+  ```powershell
+  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+  ```
+- **macOS / Linux**:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+- **Via Pip** (if you already have Python installed):
+  ```bash
+  pip install uv
+  ```
+
+> *Tip: After installing, restart your terminal or open a new PowerShell window so the `uv` command is recognized.*
+
+---
+
+### Step 2: Set Up Environment & Install Dependencies (`uv sync`)
+
+Navigate to the project root directory in your terminal and run:
+
+```bash
+uv sync
 ```
 
-### 2. Fast Sanity Check (1 Epoch per Phase)
-To verify the full pipeline and visualization generation quickly:
+#### 💡 What does `uv sync` do?
+1. **Creates the Virtual Environment (`.venv`)**: If `.venv` does not exist, `uv` automatically creates it for you (you do not need to run `uv venv` separately, though `uv venv` is also supported if you ever want to make a standalone environment).
+2. **Installs Exact Dependencies**: It reads [`pyproject.toml`](pyproject.toml) (and [`uv.lock`](uv.lock)) and installs all required packages (PyTorch, Torchvision, NumPy, Pandas, Matplotlib, Seaborn, Scikit-learn, etc.) into the virtual environment.
+3. **Pins the Python Version**: It ensures the environment uses Python 3.12 (as specified in `.python-version` and `pyproject.toml`), downloading the compatible Python binary automatically if your machine lacks it.
+
+---
+
+### Step 3: Run the Pipeline
+
+You have two simple options to execute the pipeline:
+
+#### Option A: Direct execution with `uv run` (Recommended – No activation needed!)
+You don't even have to activate the virtual environment manually. Prefixing commands with `uv run` will automatically execute them inside the project's isolated environment:
+
+```powershell
+# 1. Fast smoke test (1 epoch per phase, ~1-2 min)
+uv run python main.py --quick-test
+
+# 2. Full continual learning experiment (with isolated baselines)
+uv run python main.py --epochs 15 --batch-size 64 --lr 0.001
+```
+
+#### Option B: Activate the virtual environment manually
+If you prefer standard terminal activation:
+
+- **Windows (PowerShell)**:
+  ```powershell
+  .venv\Scripts\Activate.ps1
+  ```
+  *(or in Command Prompt: `.venv\Scripts\activate.bat`)*
+
+- **macOS / Linux**:
+  ```bash
+  source .venv/bin/activate
+  ```
+
+Once activated, run standard Python commands directly:
+```bash
+python main.py --quick-test
+```
+
+---
+
+## ⚡ Experiment Execution Options
+
+### 1. Fast Sanity Check (Recommended First Run)
+To verify your GPU/CPU setup, data download, and plot generation end-to-end:
 ```powershell
 uv run python main.py --quick-test
 ```
 
-### 3. Full Continual Learning Experiment
-To run the full 4-phase continual learning experiment (with isolated baselines):
+### 2. Full Continual Learning Experiment (with Baselines)
+Trains sequentially across all 4 CIFAR-100 phases (15 epochs per phase), followed by isolated baseline training for upper-bound comparisons:
 ```powershell
 uv run python main.py --epochs 15 --batch-size 64 --lr 0.001
 ```
 
-### 4. Continual Learning Only (Skip Baselines)
+### 3. Continual Learning Only (Skip Baselines)
+If you only want to measure catastrophic forgetting across sequential phases and save time by skipping the isolated single-phase baselines:
 ```powershell
 uv run python main.py --epochs 15 --no-baselines
 ```
 
-### 5. CLI Arguments Reference
+### 4. CLI Arguments Reference
 
 | Argument | Type | Default | Description |
 |---|---|---|---|
