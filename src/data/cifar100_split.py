@@ -167,7 +167,11 @@ class CIFAR100ContinualDataModule:
         return [i for i, label in enumerate(raw_dataset.targets) if label in target_set]
 
     def get_phase_dataloaders(
-        self, phase: int, mode: str = "continual", seed: Optional[int] = None
+        self,
+        phase: int,
+        mode: str = "continual",
+        seed: Optional[int] = None,
+        replay_dataset: Optional[Dataset] = None,
     ) -> Tuple[DataLoader, DataLoader]:
         """
         Returns (train_loader, test_loader) for a specific phase.
@@ -177,6 +181,7 @@ class CIFAR100ContinualDataModule:
             mode: "continual" uses globally contiguous labels (0..24 for phase 1, 25..49 for phase 2, etc.),
                   "isolated" uses local labels (0..24) for single-phase baseline training.
             seed: Optional integer to deterministically seed the training batch generator.
+            replay_dataset: Optional Dataset of past exemplars to interleave with training data.
         """
         if phase not in self.phase_fine_classes:
             raise ValueError(f"Invalid phase {phase}. Must be between 1 and {self.num_phases}.")
@@ -190,13 +195,18 @@ class CIFAR100ContinualDataModule:
         train_subset = PhaseSubsetDataset(self.raw_train_dataset, train_indices, mapping)
         test_subset = PhaseSubsetDataset(self.raw_test_dataset, test_indices, mapping)
 
+        # Interleave replay buffer if provided
+        train_dataset: Dataset = train_subset
+        if replay_dataset is not None and len(replay_dataset) > 0:
+            train_dataset = torch.utils.data.ConcatDataset([train_subset, replay_dataset])
+
         generator = None
         if seed is not None:
             generator = torch.Generator()
             generator.manual_seed(seed)
 
         train_loader = DataLoader(
-            train_subset,
+            train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,

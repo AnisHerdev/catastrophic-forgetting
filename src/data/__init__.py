@@ -4,9 +4,11 @@ from src.data.cifar100_split import (
     SUPERCLASS_NAMES,
     SUPERCLASS_TO_FINE_CLASSES,
 )
+from src.data.replay_buffer import ReplayBuffer
 
 __all__ = [
     "CIFAR100ContinualDataModule",
     "SUPERCLASS_NAMES",
     "SUPERCLASS_TO_FINE_CLASSES",
+    "ReplayBuffer",
 ]

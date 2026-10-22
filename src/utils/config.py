@@ -29,7 +29,12 @@ class ExperimentConfig:
     # Isolated Baselines
     run_isolated_baselines: bool = True
     baseline_epochs: int = 15
-    
+    force_baselines: bool = False
+
+    # Experience Replay Buffer
+    use_replay: bool = False
+    replay_samples_per_class: int = 20
+
     # Hardware & Seed
     device: Optional[str] = None
     seed: int = 42

@@ -58,7 +58,19 @@ def parse_args() -> argparse.Namespace:
         "--no-baselines", action="store_true", help="Skip running isolated single-phase baseline models"
     )
     parser.add_argument(
+        "--force-baselines", action="store_true", help="Force retraining isolated baseline models even if cached checkpoints exist"
+    )
+    parser.add_argument(
         "--baseline-epochs", type=int, default=15, help="Epochs for isolated baseline models (default: 15)"
+    )
+    parser.add_argument(
+        "--replay", action="store_true", help="Enable Experience Replay buffer during continual learning phases"
+    )
+    parser.add_argument(
+        "--replay-samples-per-class",
+        type=int,
+        default=20,
+        help="Number of exemplar images stored per seen class in replay buffer (default: 20)",
     )
     parser.add_argument(
         "--device",
@@ -111,6 +123,9 @@ def main() -> None:
         weight_decay=args.weight_decay,
         run_isolated_baselines=not args.no_baselines,
         baseline_epochs=baseline_epochs,
+        force_baselines=args.force_baselines,
+        use_replay=args.replay,
+        replay_samples_per_class=args.replay_samples_per_class,
         device=str(device),
         seed=args.seed,
     )
@@ -122,6 +137,8 @@ def main() -> None:
     print(f"  - Batch Size             : {config.batch_size}")
     print(f"  - Learning Rate          : {config.learning_rate}")
     print(f"  - Run Isolated Baselines : {config.run_isolated_baselines} ({config.baseline_epochs} epochs each)")
+    print(f"  - Force Baselines Retrain: {config.force_baselines}")
+    print(f"  - Experience Replay      : {config.use_replay} ({config.replay_samples_per_class} exemplars/class)")
     print(f"  - Output Directory       : {config.output_dir}")
     print(f"  - Checkpoints Directory  : {config.checkpoints_dir}")
     print(f"  - Run Log File           : {log_file_path}")

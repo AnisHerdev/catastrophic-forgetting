@@ -13,12 +13,13 @@ import torch.optim as optim
 from tqdm import tqdm
 
 from src.data.cifar100_split import CIFAR100ContinualDataModule
+from src.data.replay_buffer import ReplayBuffer
 from src.evaluation.metrics import ContinualMetricsTracker, evaluate_accuracy
 from src.models.vgg16_adapted import VGG16Adapted
 from src.utils.config import ExperimentConfig
 from src.utils.device import print_device_banner, resolve_device
 from src.utils.seed import set_seed
-from src.utils.visualizer import generate_all_visualizations
+from src.utils.visualizer import generate_all_visualizations, plot_naive_vs_replay_comparison
 
 
 def train_single_epoch(
@@ -96,6 +97,7 @@ class ContinualLearningPipeline:
     """
     Manages the complete 4-phase continual class-incremental learning workflow:
     Phase 1 (25 classes) -> Phase 2 (50 classes) -> Phase 3 (75 classes) -> Phase 4 (100 classes).
+    Supports Experience Replay Buffer and baseline caching.
     """
 
     def __init__(self, config: ExperimentConfig):
@@ -123,15 +125,32 @@ class ContinualLearningPipeline:
     def run_isolated_baselines(self) -> None:
         """
         Trains independent, isolated models for each phase to establish peak single-task baseline bounds.
+        Reuses cached baseline checkpoints if available.
         """
         print("\n" + "=" * 80)
         print("RUNNING ISOLATED SINGLE-PHASE BASELINES (Upper Bounds)")
         print("=" * 80)
 
         for phase in range(1, self.config.num_phases + 1):
-            # Phase 1 baseline uses the base experiment seed; subsequent phases use a deterministic offset
             phase_seed = self.config.seed if phase == 1 else (self.config.seed + phase)
             set_seed(phase_seed)
+
+            ckpt_path = os.path.join(self.config.checkpoints_dir, f"baseline_phase_{phase}.pt")
+
+            # Check if cached baseline checkpoint exists
+            if os.path.exists(ckpt_path) and not self.config.force_baselines:
+                print(f"\n---> [Baseline Cache] Found cached model for Phase {phase}: {ckpt_path}")
+                baseline_model = VGG16Adapted(
+                    num_classes=self.config.classes_per_phase,
+                    pretrained=self.config.pretrained_backbone,
+                    dropout_rate=self.config.dropout_rate,
+                ).to(self.device)
+                baseline_model.load_state_dict(torch.load(ckpt_path, map_location=self.device, weights_only=True))
+                _, test_loader = self.data_module.get_phase_dataloaders(phase, mode="isolated")
+                base_acc, base_loss = evaluate_accuracy(baseline_model, test_loader, self.device)
+                self.tracker.record_baseline(phase, base_acc)
+                print(f"[Baseline Result] Phase {phase} Cached Test Accuracy: {base_acc:.2f}% (Loss: {base_loss:.4f})")
+                continue
 
             print(f"\n---> Training Isolated Baseline Model for Phase {phase} ({self.config.classes_per_phase} classes)...")
 
@@ -162,16 +181,27 @@ class ContinualLearningPipeline:
             print(f"[Baseline Result] Phase {phase} Isolated Test Accuracy: {base_acc:.2f}% (Loss: {base_loss:.4f})")
 
             # Save baseline checkpoint
-            ckpt_path = os.path.join(self.config.checkpoints_dir, f"baseline_phase_{phase}.pt")
             torch.save(baseline_model.state_dict(), ckpt_path)
 
     def run_continual_learning(self) -> None:
         """
-        Executes sequential continual learning across the 4 phases with dynamic head expansion.
+        Executes sequential continual learning across the 4 phases with dynamic head expansion,
+        optionally integrating an Experience Replay Buffer.
         """
         print("\n" + "=" * 80)
-        print("STARTING CLASS-INCREMENTAL CONTINUAL LEARNING PIPELINE")
+        mode_title = "CLASS-INCREMENTAL CONTINUAL LEARNING (WITH REPLAY BUFFER)" if self.config.use_replay else "CLASS-INCREMENTAL CONTINUAL LEARNING PIPELINE"
+        print(f"STARTING {mode_title}")
         print("=" * 80)
+
+        # Initialize Replay Buffer if enabled
+        replay_buffer: Optional[ReplayBuffer] = None
+        if self.config.use_replay:
+            replay_buffer = ReplayBuffer(
+                base_dataset=self.data_module.raw_train_dataset,
+                class_mapping=self.data_module.global_class_mapping,
+                samples_per_class=self.config.replay_samples_per_class,
+            )
+            print(f"[Replay Buffer] Initialized Experience Replay Memory ({self.config.replay_samples_per_class} exemplars/class)")
 
         # Reset RNG state to self.config.seed so Continual Phase 1 begins with
         # the EXACT same initial weights, data shuffling, and dropout as Baseline Phase 1.
@@ -197,13 +227,16 @@ class ContinualLearningPipeline:
                 print(f"[Model Head] Expanding output layer: {continual_model.num_classes} -> {expected_num_classes} classes...")
                 continual_model.expand_classes(expected_num_classes)
 
-            # Get current phase training data
-            # For Phase 1, pass self.config.seed so its DataLoader generator produces
-            # the exact same mini-batch permutation order as Baseline Phase 1
+            # Get current phase training data (interleave replay buffer for phase > 1 if active)
             phase_loader_seed = self.config.seed if current_phase == 1 else None
+            active_replay = replay_buffer if (self.config.use_replay and current_phase > 1) else None
+
             train_loader, _ = self.data_module.get_phase_dataloaders(
-                current_phase, mode="continual", seed=phase_loader_seed
+                current_phase, mode="continual", seed=phase_loader_seed, replay_dataset=active_replay
             )
+
+            if active_replay is not None and len(active_replay) > 0:
+                print(f"[Replay Buffer] Interleaving {len(active_replay)} exemplars with Phase {current_phase} data (Total training samples: {len(train_loader.dataset)})")
 
             # Train on current phase
             train_model(
@@ -217,9 +250,17 @@ class ContinualLearningPipeline:
             )
 
             # Save checkpoint after this phase
-            ckpt_path = os.path.join(self.config.checkpoints_dir, f"continual_model_phase_{current_phase}.pt")
+            suffix = "_replay_buffer" if self.config.use_replay else ""
+            ckpt_path = os.path.join(self.config.checkpoints_dir, f"continual_model_phase_{current_phase}{suffix}.pt")
             torch.save(continual_model.state_dict(), ckpt_path)
             print(f"[Checkpoint] Saved model checkpoint to {ckpt_path}")
+
+            # Add completed phase exemplars into replay buffer
+            if self.config.use_replay and replay_buffer is not None:
+                added = replay_buffer.add_phase_classes(
+                    self.data_module.phase_fine_classes[current_phase], seed=self.config.seed
+                )
+                print(f"[Replay Buffer] Added {added} exemplars from Phase {current_phase}. Total buffer size: {len(replay_buffer)} samples.")
 
             # Comprehensive Evaluation: Evaluate on all seen phase test sets (1 to current_phase)
             print(f"\n[Evaluation after Phase {current_phase}] Evaluating model on all seen test sets:")
@@ -249,14 +290,24 @@ class ContinualLearningPipeline:
         # Display Summary Table
         self.tracker.print_summary_table()
 
+        suffix = "_replay_buffer" if self.config.use_replay else ""
+
         # Save Metrics CSV
-        csv_path = os.path.join(self.config.output_dir, "continual_forgetting_results.csv")
+        csv_path = os.path.join(self.config.output_dir, f"continual_forgetting_results{suffix}.csv")
         self.tracker.save_csv(csv_path)
         print(f"[Results] Saved metrics to CSV: {csv_path}")
 
         # Generate Visualizations
         print("\n[Visualizations] Generating analysis plots...")
-        generate_all_visualizations(self.tracker, output_dir=self.config.output_dir)
+        generate_all_visualizations(self.tracker, output_dir=self.config.output_dir, suffix=suffix)
+
+        # If replay run, generate side-by-side comparison with baseline run if available
+        if self.config.use_replay:
+            naive_csv = os.path.join(self.config.output_dir, "continual_forgetting_results.csv")
+            comp_path = os.path.join(self.config.output_dir, "naive_vs_replay_comparison.png")
+            if os.path.exists(naive_csv):
+                plot_naive_vs_replay_comparison(naive_csv_path=naive_csv, replay_tracker=self.tracker, save_path=comp_path)
+
         print(f"[Visualizations] All plots successfully saved in: {self.config.output_dir}")
 
         return self.tracker

@@ -7,6 +7,7 @@ import os
 from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 
 from src.evaluation.metrics import ContinualMetricsTracker
@@ -23,6 +24,7 @@ def setup_plotting_style() -> None:
 def plot_accuracy_matrix_heatmap(
     tracker: ContinualMetricsTracker,
     save_path: Optional[str] = None,
+    title_suffix: str = "",
 ) -> plt.Figure:
     """
     Plots an annotated heatmap of the continual learning accuracy matrix R_{i, j}.
@@ -56,7 +58,8 @@ def plot_accuracy_matrix_heatmap(
         annot_kws={"size": 13, "weight": "bold"},
     )
 
-    ax.set_title("Continual Learning Accuracy Matrix $R_{i,j}$ (%)\n(Row: Model State, Column: Evaluated Phase)", fontsize=14, weight="bold", pad=15)
+    title_main = f"Continual Learning Accuracy Matrix $R_{{i,j}}$ (%){title_suffix}"
+    ax.set_title(f"{title_main}\n(Row: Model State, Column: Evaluated Phase)", fontsize=14, weight="bold", pad=15)
     ax.set_xlabel("Evaluated Phase Test Set", fontsize=12, labelpad=10)
     ax.set_ylabel("After Completing Training On", fontsize=12, labelpad=10)
 
@@ -72,6 +75,7 @@ def plot_accuracy_matrix_heatmap(
 def plot_forgetting_decay_curves(
     tracker: ContinualMetricsTracker,
     save_path: Optional[str] = None,
+    title_suffix: str = "",
 ) -> plt.Figure:
     """
     Plots the accuracy trajectory of each phase across subsequent training steps,
@@ -101,7 +105,8 @@ def plot_forgetting_decay_curves(
                 color=palette[phase_idx],
             )
 
-    ax.set_title("Catastrophic Forgetting: Accuracy Decay Across Sequential Phases", fontsize=14, weight="bold", pad=15)
+    title_main = f"Continual Learning: Accuracy Decay Across Sequential Phases{title_suffix}"
+    ax.set_title(title_main, fontsize=14, weight="bold", pad=15)
     ax.set_xlabel("Continual Training Stage (After Phase N)", fontsize=12, labelpad=10)
     ax.set_ylabel("Test Accuracy (%)", fontsize=12, labelpad=10)
     ax.set_xticks(range(1, num_phases + 1))
@@ -121,6 +126,7 @@ def plot_forgetting_decay_curves(
 def plot_continual_vs_baseline_barchart(
     tracker: ContinualMetricsTracker,
     save_path: Optional[str] = None,
+    title_suffix: str = "",
 ) -> plt.Figure:
     """
     Plots a grouped bar chart comparing Initial Accuracy (R_{j,j}) vs Retained Final Accuracy (R_{4,j})
@@ -147,7 +153,6 @@ def plot_continual_vs_baseline_barchart(
         baseline_vals = [tracker.baseline_accuracies.get(j, np.nan) for j in phases]
         rects3 = ax.bar(x + width, baseline_vals, width, label="Isolated Single-Phase Baseline", color="#7570b3")
 
-    # Add labels on top of bars
     def autolabel(rects):
         for rect in rects:
             height = rect.get_height()
@@ -168,7 +173,8 @@ def plot_continual_vs_baseline_barchart(
     if has_baselines:
         autolabel(rects3)
 
-    ax.set_title("Performance Comparison: Initial vs Retained (Continual) vs Isolated Baselines", fontsize=14, weight="bold", pad=15)
+    title_main = f"Performance Comparison: Initial vs Retained vs Isolated Baselines{title_suffix}"
+    ax.set_title(title_main, fontsize=14, weight="bold", pad=15)
     ax.set_xlabel("Phase Task", fontsize=12, labelpad=10)
     ax.set_ylabel("Accuracy (%)", fontsize=12, labelpad=10)
     ax.set_xticks(x)
@@ -185,13 +191,101 @@ def plot_continual_vs_baseline_barchart(
     return fig
 
 
+def plot_naive_vs_replay_comparison(
+    naive_csv_path: str,
+    replay_tracker: ContinualMetricsTracker,
+    save_path: Optional[str] = None,
+) -> Optional[plt.Figure]:
+    """
+    Generates a dual-panel publication-grade comparison contrasting
+    unmitigated naive continual learning with experience replay.
+    """
+    if not os.path.exists(naive_csv_path):
+        return None
+
+    try:
+        df_naive = pd.read_csv(naive_csv_path, index_col=0)
+    except Exception:
+        return None
+
+    setup_plotting_style()
+    num_phases = replay_tracker.num_phases
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6), dpi=300)
+
+    # Subplot 1: Phase 1 Accuracy Decay Trajectory across Stages 1..4
+    stages = list(range(1, num_phases + 1))
+    naive_p1_decay = []
+    for i in range(1, num_phases + 1):
+        row_name = f"After Training Phase {i}"
+        val = df_naive.loc[row_name, "Eval Phase 1"] if row_name in df_naive.index and "Eval Phase 1" in df_naive.columns else np.nan
+        naive_p1_decay.append(float(val) if pd.notna(val) else 0.0)
+
+    replay_p1_decay = [replay_tracker.accuracy_matrix[i - 1, 0] for i in stages]
+
+    ax1.plot(stages, naive_p1_decay, "o--", color="#d95f02", linewidth=2.5, markersize=8, label="Naive Continual (Unmitigated)")
+    ax1.plot(stages, replay_p1_decay, "s-", color="#1b9e77", linewidth=2.5, markersize=8, label="Continual + Replay Buffer")
+
+    ax1.set_title("Phase 1 Retention: Naive vs Replay Buffer", fontsize=13, weight="bold", pad=12)
+    ax1.set_xlabel("Continual Training Stage", fontsize=11, labelpad=8)
+    ax1.set_ylabel("Phase 1 Test Accuracy (%)", fontsize=11, labelpad=8)
+    ax1.set_xticks(stages)
+    ax1.set_xticklabels([f"Stage {i}" for i in stages])
+    ax1.set_ylim(-2, 105)
+    ax1.legend(frameon=True, facecolor="white", edgecolor="#cccccc", fontsize=10)
+
+    # Subplot 2: Cumulative Accuracy on All Seen Classes
+    naive_cum = []
+    for i in range(1, num_phases + 1):
+        row_name = f"After Training Phase {i}"
+        val = df_naive.loc[row_name, "Cumulative Test Acc"] if row_name in df_naive.index and "Cumulative Test Acc" in df_naive.columns else np.nan
+        naive_cum.append(float(val) if pd.notna(val) else 0.0)
+
+    replay_cum = [replay_tracker.cumulative_accuracies.get(i, np.nan) for i in stages]
+
+    x = np.arange(len(stages))
+    width = 0.35
+    ax2.bar(x - width/2, naive_cum, width, label="Naive Continual", color="#e7298a")
+    ax2.bar(x + width/2, replay_cum, width, label="Continual + Replay Buffer", color="#386cb0")
+
+    ax2.set_title("Cumulative Lifetime Accuracy (All Seen Classes)", fontsize=13, weight="bold", pad=12)
+    ax2.set_xlabel("Continual Training Stage", fontsize=11, labelpad=8)
+    ax2.set_ylabel("Accuracy (%)", fontsize=11, labelpad=8)
+    ax2.set_xticks(x)
+    ax2.set_xticklabels([f"Stage {i} ({i*25} cls)" for i in stages])
+    ax2.set_ylim(0, 105)
+    ax2.legend(frameon=True, facecolor="white", edgecolor="#cccccc", fontsize=10)
+
+    plt.tight_layout()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        plt.savefig(save_path, bbox_inches="tight")
+        print(f"[Visualization] Saved Naive vs Replay Comparison Chart to: {save_path}")
+
+    return fig
+
+
 def generate_all_visualizations(
     tracker: ContinualMetricsTracker,
     output_dir: str = "./results",
+    suffix: str = "",
 ) -> None:
     """Generates and saves all plots and metrics to the specified output directory."""
     os.makedirs(output_dir, exist_ok=True)
-    plot_accuracy_matrix_heatmap(tracker, save_path=os.path.join(output_dir, "accuracy_matrix_heatmap.png"))
-    plot_forgetting_decay_curves(tracker, save_path=os.path.join(output_dir, "accuracy_decay_curves.png"))
-    plot_continual_vs_baseline_barchart(tracker, save_path=os.path.join(output_dir, "continual_vs_baseline.png"))
+    title_suffix = " (Replay Buffer)" if "replay" in suffix else ""
+
+    plot_accuracy_matrix_heatmap(
+        tracker,
+        save_path=os.path.join(output_dir, f"accuracy_matrix_heatmap{suffix}.png"),
+        title_suffix=title_suffix,
+    )
+    plot_forgetting_decay_curves(
+        tracker,
+        save_path=os.path.join(output_dir, f"accuracy_decay_curves{suffix}.png"),
+        title_suffix=title_suffix,
+    )
+    plot_continual_vs_baseline_barchart(
+        tracker,
+        save_path=os.path.join(output_dir, f"continual_vs_baseline{suffix}.png"),
+        title_suffix=title_suffix,
+    )
     plt.close("all")
