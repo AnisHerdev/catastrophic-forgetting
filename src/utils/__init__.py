@@ -7,6 +7,8 @@ from src.utils.visualizer import (
     generate_all_visualizations,
     plot_accuracy_matrix_heatmap,
     plot_continual_vs_baseline_barchart,
+    plot_epoch_forgetting_global_timeline,
+    plot_epoch_forgetting_phase_subplots,
     plot_forgetting_decay_curves,
 )
 
@@ -21,6 +23,8 @@ __all__ = [
     "generate_all_visualizations",
     "plot_accuracy_matrix_heatmap",
     "plot_continual_vs_baseline_barchart",
+    "plot_epoch_forgetting_global_timeline",
+    "plot_epoch_forgetting_phase_subplots",
     "plot_forgetting_decay_curves",
 ]
 

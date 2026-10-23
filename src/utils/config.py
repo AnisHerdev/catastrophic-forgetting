@@ -25,6 +25,7 @@ class ExperimentConfig:
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
     num_workers: int = 2
+    eval_every_epoch: bool = False
     
     # Isolated Baselines
     run_isolated_baselines: bool = True

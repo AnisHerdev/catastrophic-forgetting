@@ -207,6 +207,9 @@ uv run python main.py --quick-test --device cpu
 | `--data-dir` | `str` | `./data` | Directory where CIFAR-100 dataset is stored |
 | `--output-dir` | `str` | `./results` | Directory for output CSV files and PNG plots |
 | `--checkpoints-dir` | `str` | `./checkpoints` | Directory to save `.pt` model weights |
+| `--replay` | flag | `False` | Enable Experience Replay buffer during continual phases |
+| `--replay-samples-per-class` | `int` | `20` | Exemplar memory size per seen class |
+| `--eval-every-epoch` | flag | `False` | Evaluate past and current phase test sets after every epoch to track real-time catastrophic forgetting dynamics |
 | `--quick-test` | flag | `False` | Run a 1-epoch smoke test across all 4 phases |
 
 ---
@@ -218,4 +221,7 @@ All outputs are saved to `./results/`:
 2. **`accuracy_matrix_heatmap.png`**: Heatmap showing retention across phases and forgetting severity.
 3. **`accuracy_decay_curves.png`**: Line plot tracking the performance decline of Phase 1, 2, and 3 as subsequent phases are learned.
 4. **`continual_vs_baseline.png`**: Bar chart comparing Initial Accuracy vs Retained Accuracy vs Isolated Baseline for each phase.
-5. **`experiment_run_YYYY-MM-DD_HH-MM-SS.log`**: Complete byte-for-byte console execution log recorded in UTF-8 with exact run timestamp.
+5. **`epoch_forgetting_results.csv`** *(with `--eval-every-epoch`)*: Epoch-by-epoch evaluation tracking for every seen phase across all training phases.
+6. **`epoch_forgetting_global_timeline.png`** *(with `--eval-every-epoch`)*: Continuous global training timeline showing exact catastrophic forgetting collapse points.
+7. **`epoch_forgetting_phase_subplots.png`** *(with `--eval-every-epoch`)*: Multi-panel subplots contrasting prior phase degradation against new task acquisition per phase.
+8. **`experiment_run_YYYY-MM-DD_HH-MM-SS.log`**: Complete byte-for-byte console execution log recorded in UTF-8 with exact run timestamp.

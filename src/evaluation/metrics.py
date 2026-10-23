@@ -4,7 +4,8 @@ Computes task-wise accuracy matrices, catastrophic forgetting scores,
 backward transfer (BWT), and average accuracy across continual learning phases.
 """
 
-from typing import Dict, List, Optional, Tuple
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import torch
@@ -161,3 +162,101 @@ class ContinualMetricsTracker:
         print(f"Backward Transfer (BWT)          : {self.get_backward_transfer():+.2f}%")
         print(f"Final Model Average Accuracy     : {self.get_average_accuracy_after_phase(self.num_phases):.2f}%")
         print("=" * 80 + "\n")
+
+
+@dataclass
+class EpochRecord:
+    """Record of a single phase evaluation at a specific training epoch."""
+    training_phase: int
+    epoch: int
+    global_epoch: int
+    evaluated_phase: int
+    accuracy: float
+    loss: float
+    initial_peak_accuracy: Optional[float] = None
+    forgetting_drop: Optional[float] = None
+
+
+class EpochForgettingTracker:
+    """
+    Tracks epoch-by-epoch evaluation across all continual learning phases
+    to quantify real-time catastrophic forgetting and retention trajectories.
+    """
+
+    def __init__(self):
+        self.records: List[EpochRecord] = []
+
+    def record(
+        self,
+        training_phase: int,
+        epoch: int,
+        global_epoch: int,
+        evaluated_phase: int,
+        accuracy: float,
+        loss: float,
+        initial_peak_accuracy: Optional[float] = None,
+    ) -> None:
+        """
+        Record performance on an evaluated phase test set at a specific epoch of training.
+        """
+        forgetting_drop = None
+        if initial_peak_accuracy is not None and evaluated_phase < training_phase:
+            forgetting_drop = initial_peak_accuracy - accuracy
+
+        record = EpochRecord(
+            training_phase=training_phase,
+            epoch=epoch,
+            global_epoch=global_epoch,
+            evaluated_phase=evaluated_phase,
+            accuracy=accuracy,
+            loss=loss,
+            initial_peak_accuracy=initial_peak_accuracy,
+            forgetting_drop=forgetting_drop,
+        )
+        self.records.append(record)
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Exports the epoch records to a structured pandas DataFrame."""
+        if not self.records:
+            return pd.DataFrame(
+                columns=[
+                    "training_phase",
+                    "epoch",
+                    "global_epoch",
+                    "evaluated_phase",
+                    "accuracy",
+                    "loss",
+                    "initial_peak_accuracy",
+                    "forgetting_drop",
+                ]
+            )
+        return pd.DataFrame([asdict(r) for r in self.records])
+
+    def save_csv(self, filepath: str) -> None:
+        """Saves epoch tracking metrics to CSV."""
+        df = self.to_dataframe()
+        df.to_csv(filepath, index=False)
+
+    def find_collapse_epochs(self, chance_threshold: float = 5.0) -> Dict[Tuple[int, int], Optional[int]]:
+        """
+        Identifies the first epoch in a subsequent training phase where
+        the previous phase's accuracy collapses below chance_threshold (e.g. 5.0%).
+        Returns mapping: (training_phase, evaluated_phase) -> first collapse epoch or None.
+        """
+        df = self.to_dataframe()
+        collapse_map: Dict[Tuple[int, int], Optional[int]] = {}
+
+        if df.empty:
+            return collapse_map
+
+        for (tp, ep), group in df.groupby(["training_phase", "evaluated_phase"]):
+            if ep < tp:  # Only for prior phases evaluated during subsequent training
+                collapsed = group[group["accuracy"] <= chance_threshold]
+                if not collapsed.empty:
+                    first_epoch = int(collapsed["epoch"].iloc[0])
+                    collapse_map[(int(tp), int(ep))] = first_epoch
+                else:
+                    collapse_map[(int(tp), int(ep))] = None
+
+        return collapse_map
+

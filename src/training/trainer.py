@@ -6,7 +6,8 @@ isolated single-phase baselines, and evaluation matrix tracking.
 
 import os
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -14,7 +15,7 @@ from tqdm import tqdm
 
 from src.data.cifar100_split import CIFAR100ContinualDataModule
 from src.data.replay_buffer import ReplayBuffer
-from src.evaluation.metrics import ContinualMetricsTracker, evaluate_accuracy
+from src.evaluation.metrics import ContinualMetricsTracker, EpochForgettingTracker, evaluate_accuracy
 from src.models.vgg16_adapted import VGG16Adapted
 from src.utils.config import ExperimentConfig
 from src.utils.device import print_device_banner, resolve_device
@@ -70,9 +71,11 @@ def train_model(
     weight_decay: float,
     device: torch.device,
     phase_label: str = "Phase",
+    on_epoch_end: Optional[Callable[[int, float, float], None]] = None,
 ) -> nn.Module:
     """
     Trains a model for a given number of epochs using the Adam optimizer.
+    Optionally calls on_epoch_end(epoch, train_acc, train_loss) after each epoch.
     """
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
@@ -89,6 +92,9 @@ def train_model(
         )
         elapsed = time.time() - start_time
         print(f"[{phase_label}] Epoch {epoch:02d}/{epochs:02d} | Loss: {loss:.4f} | Train Acc: {acc:.2f}% | Time: {elapsed:.1f}s")
+
+        if on_epoch_end is not None:
+            on_epoch_end(epoch, acc, loss)
 
     return model
 
@@ -117,6 +123,7 @@ class ContinualLearningPipeline:
 
         # Setup Metrics Tracker
         self.tracker = ContinualMetricsTracker(num_phases=config.num_phases)
+        self.epoch_tracker = EpochForgettingTracker()
 
         # Ensure output and checkpoint directories exist
         os.makedirs(config.output_dir, exist_ok=True)
@@ -238,6 +245,43 @@ class ContinualLearningPipeline:
             if active_replay is not None and len(active_replay) > 0:
                 print(f"[Replay Buffer] Interleaving {len(active_replay)} exemplars with Phase {current_phase} data (Total training samples: {len(train_loader.dataset)})")
 
+            # Setup per-epoch evaluation callback if --eval-every-epoch is active
+            def on_continual_epoch_end(epoch: int, train_acc: float, train_loss: float) -> None:
+                global_epoch = (current_phase - 1) * self.config.epochs_per_phase + epoch
+                eval_summaries = []
+
+                for eval_p in range(1, current_phase + 1):
+                    t_loader = self.data_module.get_phase_test_loader(eval_p)
+                    eval_acc, eval_loss = evaluate_accuracy(continual_model, t_loader, self.device)
+
+                    # Initial peak accuracy of evaluated phase (available if eval_p < current_phase)
+                    initial_peak = None
+                    if eval_p < current_phase:
+                        val = self.tracker.accuracy_matrix[eval_p - 1, eval_p - 1]
+                        if not np.isnan(val):
+                            initial_peak = float(val)
+
+                    self.epoch_tracker.record(
+                        training_phase=current_phase,
+                        epoch=epoch,
+                        global_epoch=global_epoch,
+                        evaluated_phase=eval_p,
+                        accuracy=eval_acc,
+                        loss=eval_loss,
+                        initial_peak_accuracy=initial_peak,
+                    )
+
+                    if eval_p < current_phase and initial_peak is not None:
+                        delta = eval_acc - initial_peak
+                        eval_summaries.append(f"P{eval_p}: {eval_acc:.1f}% (Δ: {delta:+.1f}%)")
+                    elif eval_p == current_phase:
+                        eval_summaries.append(f"P{eval_p} (New): {eval_acc:.1f}%")
+                    else:
+                        eval_summaries.append(f"P{eval_p}: {eval_acc:.1f}%")
+
+                eval_str = " | ".join(eval_summaries)
+                print(f"       └─ [Epoch Eval @ Global Ep {global_epoch:02d}] Test Acc -> {eval_str}")
+
             # Train on current phase
             train_model(
                 model=continual_model,
@@ -247,6 +291,7 @@ class ContinualLearningPipeline:
                 weight_decay=self.config.weight_decay,
                 device=self.device,
                 phase_label=f"Continual P{current_phase}",
+                on_epoch_end=on_continual_epoch_end if self.config.eval_every_epoch else None,
             )
 
             # Save checkpoint after this phase
@@ -297,9 +342,34 @@ class ContinualLearningPipeline:
         self.tracker.save_csv(csv_path)
         print(f"[Results] Saved metrics to CSV: {csv_path}")
 
+        # Save Epoch-level Metrics CSV if tracked
+        if self.config.eval_every_epoch:
+            epoch_csv_path = os.path.join(self.config.output_dir, f"epoch_forgetting_results{suffix}.csv")
+            self.epoch_tracker.save_csv(epoch_csv_path)
+            print(f"[Results] Saved epoch-by-epoch forgetting trajectories to CSV: {epoch_csv_path}")
+
+            # Print collapse summary table
+            collapse_map = self.epoch_tracker.find_collapse_epochs(chance_threshold=5.0)
+            if collapse_map:
+                print("\n" + "=" * 80)
+                print("EPOCH-LEVEL CATASTROPHIC FORGETTING COLLAPSE AUDIT:")
+                print("Threshold: Accuracy drops to <= 5.0% (Chance level is 4.0%)")
+                print("-" * 80)
+                for (tp, ep), col_epoch in sorted(collapse_map.items()):
+                    if col_epoch is not None:
+                        print(f"  • Training Phase {tp}: Prior Phase {ep} memory COLLAPSED at Epoch {col_epoch:02d}!")
+                    else:
+                        print(f"  • Training Phase {tp}: Prior Phase {ep} memory preserved above 5.0% threshold.")
+                print("=" * 80)
+
         # Generate Visualizations
         print("\n[Visualizations] Generating analysis plots...")
-        generate_all_visualizations(self.tracker, output_dir=self.config.output_dir, suffix=suffix)
+        generate_all_visualizations(
+            self.tracker,
+            output_dir=self.config.output_dir,
+            suffix=suffix,
+            epoch_tracker=self.epoch_tracker if self.config.eval_every_epoch else None,
+        )
 
         # If replay run, generate side-by-side comparison with baseline run if available
         if self.config.use_replay:

@@ -85,6 +85,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--quick-test", action="store_true", help="Run a fast 1-epoch sanity check across all 4 phases"
     )
+    parser.add_argument(
+        "--eval-every-epoch",
+        action="store_true",
+        help="Evaluate all seen phase test sets after every epoch to track real-time catastrophic forgetting dynamics",
+    )
     return parser.parse_args()
 
 
@@ -121,6 +126,7 @@ def main() -> None:
         batch_size=args.batch_size,
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
+        eval_every_epoch=args.eval_every_epoch,
         run_isolated_baselines=not args.no_baselines,
         baseline_epochs=baseline_epochs,
         force_baselines=args.force_baselines,
@@ -134,6 +140,7 @@ def main() -> None:
     print(f"  - Active Hardware Device : {device_info['device_type'].upper()} ({device})")
     print(f"  - Continual Phases       : {config.num_phases} (25 classes each -> 100 total)")
     print(f"  - Epochs Per Phase       : {config.epochs_per_phase}")
+    print(f"  - Eval Every Epoch       : {config.eval_every_epoch}")
     print(f"  - Batch Size             : {config.batch_size}")
     print(f"  - Learning Rate          : {config.learning_rate}")
     print(f"  - Run Isolated Baselines : {config.run_isolated_baselines} ({config.baseline_epochs} epochs each)")
