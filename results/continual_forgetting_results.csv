@@ -1,5 +1,5 @@
 ,Eval Phase 1,Eval Phase 2,Eval Phase 3,Eval Phase 4,Average Accuracy (Seen),Cumulative Test Acc
-After Training Phase 1,54.64,,,,54.64,54.64
-After Training Phase 2,0.0,62.12,,,31.06,31.06
-After Training Phase 3,0.0,0.0,58.56,,19.52,19.52
-After Training Phase 4,0.0,0.0,0.0,60.36,15.09,15.09
+After Training Phase 1,54.04,,,,54.04,54.04
+After Training Phase 2,0.0,67.56,,,33.78,33.78
+After Training Phase 3,0.0,0.0,58.24,,19.413333333333334,19.413333333333334
+After Training Phase 4,0.0,0.0,0.0,60.68,15.17,15.17
