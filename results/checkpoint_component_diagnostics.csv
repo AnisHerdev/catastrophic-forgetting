@@ -1,0 +1,13 @@
+checkpoint_group,phase,checkpoint,reference_checkpoint,features_relative_l2_drift,features_parameters_compared,features_tensors_compared,classifier_relative_l2_drift,classifier_parameters_compared,classifier_tensors_compared
+isolated_baselines,1,baseline_phase_1.pt,baseline_phase_1.pt,0.0,14714688,26,0.0,137753,4
+isolated_baselines,2,baseline_phase_2.pt,baseline_phase_1.pt,0.4788646025155398,14714688,26,1.4037467062894389,137753,4
+isolated_baselines,3,baseline_phase_3.pt,baseline_phase_1.pt,0.48261507184897495,14714688,26,1.4106219224401229,137753,4
+isolated_baselines,4,baseline_phase_4.pt,baseline_phase_1.pt,0.47798383069822215,14714688,26,1.4005763941123457,137753,4
+continual_naive,1,continual_model_phase_1.pt,continual_model_phase_1.pt,0.0,14714688,26,0.0,137753,4
+continual_naive,2,continual_model_phase_2.pt,continual_model_phase_1.pt,1.1075548598847278,14714688,26,0.9655685016663054,137753,4
+continual_naive,3,continual_model_phase_3.pt,continual_model_phase_1.pt,1.2117065258636015,14714688,26,1.0608602729901082,137753,4
+continual_naive,4,continual_model_phase_4.pt,continual_model_phase_1.pt,1.285741520839778,14714688,26,1.0872235462238837,137753,4
+continual_replay,1,continual_model_phase_1_replay_buffer.pt,continual_model_phase_1_replay_buffer.pt,0.0,14714688,26,0.0,137753,4
+continual_replay,2,continual_model_phase_2_replay_buffer.pt,continual_model_phase_1_replay_buffer.pt,1.1066001295037011,14714688,26,0.9017745111205189,137753,4
+continual_replay,3,continual_model_phase_3_replay_buffer.pt,continual_model_phase_1_replay_buffer.pt,1.2346447037388808,14714688,26,1.0302071043698664,137753,4
+continual_replay,4,continual_model_phase_4_replay_buffer.pt,continual_model_phase_1_replay_buffer.pt,1.3658885815341435,14714688,26,1.0854120662895532,137753,4
